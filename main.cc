@@ -16,14 +16,23 @@ public:
 
   // attributes include:
   //
-  //     * tag (multiple)
-  //     * thread_id
-  //     * boundary_id (multiple)
-  //     * subdomain_id
+  //     * tag (multiple) few - 3ish
+  //     * system - order 50
+  //     * execute_on (multiple) 10 max
+  //     * thread_id - order 10
+  //     * boundary_id (multiple) 1000 per mesh, 1000 per object (use "all/any" optimization)
+  //     * subdomain_id (multiple) 10000 per mesh, 1000 per object (use "all/any" optimization)
   //     * enabled
   virtual void add(int obj_id, const std::vector<Attribute> attribs) = 0;
   virtual std::vector<int> query(const std::vector<Attribute>& conds) = 0;
   virtual void set(int obj_id, Attribute attrib) = 0;
+};
+
+class SqlStore : public Storage {
+public:
+  virtual void add(int obj_id, const std::vector<Storage::Attribute> attribs) override {}
+  virtual std::vector<int> query(const std::vector<Storage::Attribute>& conds) override {return {};}
+  virtual void set(int obj_id, Storage::Attribute attrib) override {}
 };
 
 int tagid(const std::string & s)
@@ -52,13 +61,6 @@ public:
 
   Warehouse(Storage& s, bool use_cache = true) : _store(s), _use_cache(use_cache) {};
 
-  // attributes include:
-  //
-  //     * tag (multiple)
-  //     * thread_id
-  //     * boundary_id (multiple)
-  //     * subdomain_id
-  //     * enabled
   void addObject(std::unique_ptr<Object> obj, const std::vector<Attribute> & attribs)
   {
     for (int i = 0; i < _query_dirty.size(); i++)
@@ -134,6 +136,19 @@ private:
 int
 main(int argc, char ** argv)
 {
+  int nboundaries = 1000;
+  int nsubdomains = 10000;
+  int nthreads = 10;
+  int nsystems = 50;
+  int nobjects = 1000000;
+
+  int boundaries_per_object = 1000;
+  int subdomains_per_object = 10000;
+  int tags_per_object = 5;
+  int execs_per_object = 10;
+
+  SqlStore store;
+  Warehouse w(store);;
 
   return 0;
 }
