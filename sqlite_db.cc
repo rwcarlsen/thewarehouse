@@ -15,6 +15,13 @@ class Error : public std::exception {
   std::string msg_;
 };
 
+SqlStatement::SqlStatement(sqlite3* db, std::string zSql)
+    : db_(db),
+      zSql_(zSql),
+      stmt_(NULL) {
+  Must(sqlite3_prepare_v2(db_, zSql.c_str(), -1, &stmt_, NULL));
+}
+
 SqlStatement::~SqlStatement() {
   Must(sqlite3_finalize(stmt_));
 }
@@ -69,13 +76,6 @@ void SqlStatement::BindText(int i, const char* val) {
 
 void SqlStatement::BindBlob(int i, const void* val, int n) {
   Must(sqlite3_bind_blob(stmt_, i, val, n, SQLITE_TRANSIENT));
-}
-
-SqlStatement::SqlStatement(sqlite3* db, std::string zSql)
-    : db_(db),
-      zSql_(zSql),
-      stmt_(NULL) {
-  Must(sqlite3_prepare_v2(db_, zSql.c_str(), -1, &stmt_, NULL));
 }
 
 void SqlStatement::Must(int status) {

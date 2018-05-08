@@ -17,7 +17,7 @@ class SqliteDb;
 class SqlStatement {
   friend class SqliteDb;
  public:
-  typedef std::shared_ptr<SqlStatement> Ptr;
+  typedef std::unique_ptr<SqlStatement> Ptr;
 
   ~SqlStatement();
 

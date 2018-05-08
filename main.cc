@@ -1,106 +1,190 @@
 
+#include "sqlite_db.h"
+
 #include <iostream>
-#include <string>
 #include <map>
+#include <string>
 #include <vector>
 
-class Object { };
-
-class Storage {
-public:
-  struct Attribute {
-    int id;
-    int value;
-    bool operator == (const Attribute & other) const { return id == other.id && value == other.value;}
-  };
-
-  // attributes include:
-  //
-  //     * tag (multiple) few - 3ish
-  //     * system - order 50
-  //     * execute_on (multiple) 10 max
-  //     * thread_id - order 10
-  //     * boundary_id (multiple) 1000 per mesh, 1000 per object (use "all/any" optimization)
-  //     * subdomain_id (multiple) 10000 per mesh, 1000 per object (use "all/any" optimization)
-  //     * enabled
-  virtual void add(int obj_id, const std::vector<Attribute> attribs) = 0;
-  virtual std::vector<int> query(const std::vector<Attribute>& conds) = 0;
-  virtual void set(int obj_id, Attribute attrib) = 0;
-};
-
-class SqlStore : public Storage {
-public:
-  virtual void add(int obj_id, const std::vector<Storage::Attribute> attribs) override {}
-  virtual std::vector<int> query(const std::vector<Storage::Attribute>& conds) override {return {};}
-  virtual void set(int obj_id, Storage::Attribute attrib) override {}
-};
-
-int tagid(const std::string & s)
+class Object
 {
-  static std::map<std::string, int> ids;
-  if (ids.count(s) == 0)
-    ids[s] = ids.size();
-  return ids[s];
-}
+};
 
-enum class Attributes
+// attributes include:
+//
+//     * tag (multiple) few - 3ish
+//     * system - order 50
+//     * execute_on (multiple) 10 max
+//     * thread_id - order 10
+//     * boundary_id (multiple) 1000 per mesh, 1000 per object (use "all/any" optimization)
+//     * subdomain_id (multiple) 10000 per mesh, 1000 per object (use "all/any" optimization)
+//     * enabled
+enum class AttributeId
 {
   Thread,
-  Tag, // multiple
-  Boundary, // multiple
-  Subdomain,
+  System,
   Enabled,
+  Tag,      // multiple
+  Boundary, // multiple
+  Subdomain, // multiple
+  ExecOn, // multiple
 };
 
-class Warehouse {
+class Storage
+{
 public:
-  struct Attribute {
-    std::string name;
+  struct Attribute
+  {
+    AttributeId id;
     int value;
+    std::string strvalue;
+    bool operator==(const Attribute & other) const
+    {
+      return id == other.id && value == other.value && strvalue == other.strvalue;
+    }
   };
 
-  Warehouse(Storage& s, bool use_cache = true) : _store(s), _use_cache(use_cache) {};
+  virtual void add(int obj_id, const std::vector<Attribute> & attribs) = 0;
+  virtual std::vector<int> query(const std::vector<Attribute> & conds) = 0;
+  virtual void set(int obj_id, const Attribute & attrib) = 0;
+};
 
-  void addObject(std::unique_ptr<Object> obj, const std::vector<Attribute> & attribs)
+class SqlStore : public Storage
+{
+public:
+  SqlStore()
+    : Storage(), _db(":memory:"), _in_transaction(false)
+  {
+    _db.Execute("CREATE TABLE objects (id INTEGER, system TEXT, thread INTEGER, enabled INTEGER);");
+    _db.Execute("CREATE TABLE subdomains (id INTEGER, subdomain INTEGER);");
+    _db.Execute("CREATE TABLE boundaries (id INTEGER, boundary INTEGER);");
+    _db.Execute("CREATE TABLE execute_ons (id INTEGER, execute_on INTEGER);");
+    _db.Execute("CREATE TABLE tags (id INTEGER, tag TEXT);");
+    _tblmain = _db.Prepare("INSERT INTO objects (id, system, thread, enabled) VALUES (?,?,?,?);");
+    _tbltag = _db.Prepare("INSERT INTO tags (id, tag) VALUES (?,?);");
+    _tblbound = _db.Prepare("INSERT INTO boundaries (id, boundary) VALUES (?,?);");
+    _tblsubdomain = _db.Prepare("INSERT INTO subdomains (id, subdomain) VALUES (?,?);");
+    _tblexecons = _db.Prepare("INSERT INTO execute_ons (id, execute_on) VALUES (?,?);");
+  }
+
+  virtual void add(int obj_id, const std::vector<Storage::Attribute> & attribs) override
+  {
+    if (!_in_transaction)
+    {
+      _in_transaction = true;
+      _db.Execute("BEGIN TRANSACTION;");
+    }
+
+    bool enabled = true;
+    int thread = -1;
+    std::string system;
+    std::vector<std::string> tags;
+    std::vector<int> bounds;
+    std::vector<int> subdomains;
+    std::vector<int> execons;
+    for (auto& attrib : attribs)
+    {
+        switch (attrib.id)
+        {
+        case AttributeId::Thread:
+            thread = attrib.value;
+            break;
+        case AttributeId::System:
+            system = attrib.strvalue;
+            break;
+        case AttributeId::Enabled:
+            enabled = attrib.value;
+            break;
+        case AttributeId::Boundary:
+            _tblbound->BindInt(1, obj_id);
+            _tblbound->BindInt(2, attrib.value);
+            _tblbound->Exec();
+            break;
+        case AttributeId::Subdomain:
+            _tblsubdomain->BindInt(1, obj_id);
+            _tblsubdomain->BindInt(2, attrib.value);
+            _tblsubdomain->Exec();
+            break;
+        case AttributeId::ExecOn:
+            _tblexecons->BindInt(1, obj_id);
+            _tblexecons->BindInt(2, attrib.value);
+            _tblexecons->Exec();
+            break;
+        case AttributeId::Tag:
+            _tbltag->BindInt(1, obj_id);
+            _tbltag->BindText(2, attrib.strvalue.c_str());
+            _tbltag->Exec();
+            break;
+        default:
+            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(attrib.id)));
+        }
+    }
+
+    _tblmain->BindInt(1, obj_id);
+    _tblmain->BindText(2, system.c_str());
+    _tblmain->BindInt(3, thread);
+    _tblmain->BindInt(4, enabled);
+    _tblmain->Exec();
+  }
+
+  virtual std::vector<int> query(const std::vector<Storage::Attribute> & conds) override
+  {
+    if (_in_transaction)
+    {
+      _in_transaction = false;
+      _db.Execute("END TRANSACTION;");
+    }
+
+    return {};
+  }
+
+  virtual void set(int obj_id, const Storage::Attribute & attrib) override
+  {
+  }
+
+private:
+  SqliteDb _db;
+  bool _in_transaction;
+  SqlStatement::Ptr _tblmain;
+  SqlStatement::Ptr _tbltag;
+  SqlStatement::Ptr _tblbound;
+  SqlStatement::Ptr _tblsubdomain;
+  SqlStatement::Ptr _tblexecons;
+};
+
+class Warehouse
+{
+public:
+  Warehouse(Storage & s, bool use_cache = true)
+    : _store(s), _use_cache(use_cache){};
+
+  void addObject(std::unique_ptr<Object> obj, const std::vector<Storage::Attribute> & attribs)
   {
     for (int i = 0; i < _query_dirty.size(); i++)
       _query_dirty[i] = true;
 
-    // build the id-based version of attribs (i.e. not name/string based)
-    std::vector<Storage::Attribute> store_attribs;
-    for (auto & attrib : attribs)
-    {
-      if (_attribute_ids.count(attrib.name) == 0)
-        _attribute_ids[attrib.name] = _attribute_ids.size();
-      store_attribs.push_back({_attribute_ids[attrib.name], attrib.value});
-    }
-
     _objects.push_back(std::move(obj));
-    _store.add(_objects.size() - 1, store_attribs);
+    _store.add(_objects.size() - 1, attribs);
   }
 
   // prepares a query and returns an associated query_id (i.e. for use with the query function.
-  int prepare(const std::vector<Attribute> & conds)
+  int prepare(const std::vector<Storage::Attribute> & conds)
   {
-    // build the id-based version of conds (i.e. not name/string based)
-    std::vector<Storage::Attribute> store_conds;
-    for (auto & cond : conds)
-      store_conds.push_back({_attribute_ids[cond.name], cond.value});
-    auto obj_ids = _store.query(store_conds);
+    auto obj_ids = _store.query(conds);
 
     // see if this query matches an existing cached one.
     if (_use_cache && _query_cache.size() < 100)
     {
       for (int i = 0; i < _query_cache.size(); i++)
       {
-        if (_query_cache[i] == store_conds)
+        if (_query_cache[i] == conds)
           return i;
       }
     }
 
     _query_dirty.push_back(true);
     _obj_cache.push_back({});
-    _query_cache.push_back(store_conds);
+    _query_cache.push_back(conds);
 
     return _obj_cache.size() - 1;
   }
@@ -123,15 +207,24 @@ public:
   }
 
 private:
-  Storage& _store;
+  Storage & _store;
   std::vector<std::unique_ptr<Object>> _objects;
 
   bool _use_cache;
-  std::map<std::string, int> _attribute_ids;
-  std::vector<std::vector<Object*>> _obj_cache;
+  std::vector<std::vector<Object *>> _obj_cache;
   std::vector<std::vector<Storage::Attribute>> _query_cache;
   std::vector<bool> _query_dirty;
 };
+
+// not needed?
+int
+tagid(const std::string & s)
+{
+  static std::map<std::string, int> ids;
+  if (ids.count(s) == 0)
+    ids[s] = ids.size();
+  return ids[s];
+}
 
 int
 main(int argc, char ** argv)
@@ -148,7 +241,7 @@ main(int argc, char ** argv)
   int execs_per_object = 10;
 
   SqlStore store;
-  Warehouse w(store);;
+  Warehouse w(store);
 
   return 0;
 }
