@@ -8,6 +8,15 @@
 
 class Object
 {
+public:
+    int thread = 0;
+    std::string system;
+    bool enabled = true;
+
+    std::vector<int> boundaries;
+    std::vector<int> subdomains;
+    std::vector<std::string> tags;
+    std::vector<int> execute_ons;
 };
 
 // attributes include:
@@ -158,10 +167,23 @@ public:
   Warehouse(Storage & s, bool use_cache = true)
     : _store(s), _use_cache(use_cache){};
 
-  void addObject(std::unique_ptr<Object> obj, const std::vector<Storage::Attribute> & attribs)
+  void addObject(std::unique_ptr<Object> obj)
   {
     for (int i = 0; i < _query_dirty.size(); i++)
       _query_dirty[i] = true;
+
+    std::vector<Storage::Attribute> attribs;
+    attribs.push_back({AttributeId::System, 0, obj->system});
+    attribs.push_back({AttributeId::Thread, obj->thread, ""});
+    attribs.push_back({AttributeId::Enabled, obj->enabled, ""});
+    for (auto& tag : obj->tags)
+        attribs.push_back({AttributeId::Tag, 0, tag});
+    for (auto& sub : obj->subdomains)
+        attribs.push_back({AttributeId::Subdomain, sub, ""});
+    for (auto& bound : obj->boundaries)
+        attribs.push_back({AttributeId::Boundary, bound, ""});
+    for (auto& on : obj->execute_ons)
+        attribs.push_back({AttributeId::ExecOn, on, ""});
 
     _objects.push_back(std::move(obj));
     _store.add(_objects.size() - 1, attribs);
