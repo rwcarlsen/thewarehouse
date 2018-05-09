@@ -74,10 +74,6 @@ void SqlStatement::BindText(int i, const char* val) {
   Must(sqlite3_bind_text(stmt_, i, val, -1, SQLITE_TRANSIENT));
 }
 
-void SqlStatement::BindBlob(int i, const void* val, int n) {
-  Must(sqlite3_bind_blob(stmt_, i, val, n, SQLITE_TRANSIENT));
-}
-
 void SqlStatement::Must(int status) {
   if (status != SQLITE_OK && status != SQLITE_DONE && status != SQLITE_ROW) {
     std::string err = sqlite3_errmsg(db_);
@@ -85,18 +81,12 @@ void SqlStatement::Must(int status) {
   }
 }
 
-SqliteDb::SqliteDb(std::string path, bool readonly)
+SqliteDb::SqliteDb(std::string path)
     : db_(NULL),
       isOpen_(false),
-      path_(path),
-      readonly_(readonly),
-      overwrite_(false) {}
+      path_(path) {}
 
 SqliteDb::~SqliteDb() {}
-
-void SqliteDb::Overwrite() {
-  overwrite_ = true;
-}
 
 void SqliteDb::close() {
   if (isOpen_) {
@@ -111,18 +101,7 @@ void SqliteDb::open() {
     return;
   }
 
-  // if the file already exists, delete it
-  if (overwrite_) {
-    std::ifstream ifile(path_.c_str());
-    if (ifile) {
-      remove(path_.c_str());
-    }
-  }
-
-  if (readonly_ && sqlite3_open_v2(path_.c_str(), &db_, SQLITE_OPEN_READONLY,
-                                   NULL) == SQLITE_OK) {
-    isOpen_ = true;
-  } else if (sqlite3_open(path_.c_str(), &db_) == SQLITE_OK) {
+  if (sqlite3_open(path_.c_str(), &db_) == SQLITE_OK) {
     isOpen_ = true;
   } else {
     sqlite3_close(db_);
@@ -153,48 +132,5 @@ void SqliteDb::Execute(std::string sql) {
   }
 
   sqlite3_finalize(statement);
-}
-
-std::vector<StrList> SqliteDb::Query(std::string sql) {
-  open();
-  sqlite3_stmt* statement;
-  // query the database
-  int check_query =
-    sqlite3_prepare_v2(db_, sql.c_str(), -1, &statement, NULL);
-  if (check_query != SQLITE_OK) {
-    std::string error = sqlite3_errmsg(db_);
-    throw Error("SQL error: " + error);
-  }
-
-  std::vector<StrList> results;
-  int cols = sqlite3_column_count(statement);
-  int result = 0;
-  while (true) {
-    result = sqlite3_step(statement);
-    if (result != SQLITE_ROW) {
-      break;
-    }
-
-    StrList values;
-    for (int col = 0; col < cols; col++) {
-      std::string  val;
-      char* ptr = (char*)sqlite3_column_text(statement, col);
-      if (ptr) {
-        val = ptr;
-      } else {
-        val = "";
-      }
-      values.push_back(val);  // now we will never push NULL
-    }
-    results.push_back(values);
-  }
-
-  // collect errors
-  if (result != SQLITE_DONE && result != SQLITE_OK) {
-    std::string error = sqlite3_errmsg(db_);
-    throw Error("SQL error: " + error);
-  }
-  sqlite3_finalize(statement);
-  return results;
 }
 

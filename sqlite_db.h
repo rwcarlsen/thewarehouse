@@ -7,8 +7,6 @@
 class sqlite3;
 class sqlite3_stmt;
 
-typedef std::vector<std::string> StrList;
-
 class SqliteDb;
 
 /// Thin wrapper class over sqlite3 prepared statements.  See
@@ -51,10 +49,6 @@ class SqlStatement {
   /// Binds the templated sql parameter at index i to val.
   void BindText(int i, const char* val);
 
-  /// Binds the templated sql parameter at index i to the value pointed to by
-  /// val. n is the length in bytes of the value.
-  void BindBlob(int i, const void* val, int n);
-
  private:
   SqlStatement(sqlite3* db, std::string zSql);
 
@@ -74,8 +68,7 @@ class SqliteDb {
   /// Creates a new Sqlite database to be stored at the specified path.
   ///
   /// @param path the path+name for the sqlite database file
-  /// @param readonly a boolean indicating true if db is readonly
-  SqliteDb(std::string path, bool readonly = false);
+  SqliteDb(std::string path);
 
   virtual ~SqliteDb();
 
@@ -104,25 +97,10 @@ class SqliteDb {
   /// @throw IOError SQL command execution failed (e.g. invalid SQL)
   void Execute(std::string cmd);
 
-  /// Execute an SQL query and return its results
-  ///
-  /// @param cmd an Sqlite compatible SQL query
-  /// @return a list of row entries
-  /// @throw IOError SQL command execution failed (e.g. invalid SQL)
-  std::vector<StrList> Query(std::string cmd);
-
  private:
   sqlite3* db_;
-
   bool isOpen_;
-
   std::string path_;
-
-  /// indicates if open() will overwrite a file at 'path'.
-  bool overwrite_;
-
-  /// indicates true if the db is readonly false otherwise
-  bool readonly_;
 };
 
 #endif  // CYCLUS_SRC_SQLITE_DB_H_
