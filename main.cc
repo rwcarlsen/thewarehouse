@@ -5,6 +5,8 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <random>
+#include <chrono>
 
 class Object
 {
@@ -64,7 +66,7 @@ public:
   SqlStore()
     : Storage(), _db(":memory:"), _in_transaction(false)
   {
-    _db.Execute("CREATE TABLE objects (id INTEGER, system TEXT, thread INTEGER, enabled INTEGER);");
+    _db.Execute("CREATE TABLE objects (id INTEGER PRIMARY KEY, system TEXT, thread INTEGER, enabled INTEGER);");
     _db.Execute("CREATE TABLE subdomains (id INTEGER, subdomain INTEGER);");
     _db.Execute("CREATE TABLE boundaries (id INTEGER, boundary INTEGER);");
     _db.Execute("CREATE TABLE execute_ons (id INTEGER, execute_on INTEGER);");
@@ -75,6 +77,20 @@ public:
     _tblsubdomain = _db.Prepare("INSERT INTO subdomains (id, subdomain) VALUES (?,?);");
     _tblexecons = _db.Prepare("INSERT INTO execute_ons (id, execute_on) VALUES (?,?);");
   }
+
+  ~SqlStore()
+  {
+
+      auto s1 = _db.Prepare("PRAGMA PAGE_SIZE;");
+      s1->Step();
+      int pagesize = s1->GetInt(0);
+
+      auto s2 = _db.Prepare("PRAGMA PAGE_COUNT;");
+      s2->Step();
+      int pagecount = s2->GetInt(0);
+
+      std::cout << "Sqlite db size: " << pagecount * pagesize / 1000 << " kB (page_size=" << pagesize << ", pagecount=" << pagecount << ")\n";
+  };
 
   virtual void add(int obj_id, const std::vector<Storage::Attribute> & attribs) override
   {
@@ -195,7 +211,7 @@ public:
     auto obj_ids = _store.query(conds);
 
     // see if this query matches an existing cached one.
-    if (_use_cache && _query_cache.size() < 100)
+    if (_use_cache && _query_cache.size() < 20)
     {
       for (int i = 0; i < _query_cache.size(); i++)
       {
@@ -251,19 +267,89 @@ tagid(const std::string & s)
 int
 main(int argc, char ** argv)
 {
+  int nqueries = 1000;
+
   int nboundaries = 1000;
   int nsubdomains = 10000;
   int nthreads = 10;
   int nsystems = 50;
+  int nexecons = 10;
+  int ntags = 10;
   int nobjects = 1000000;
 
   int boundaries_per_object = 1000;
   int subdomains_per_object = 10000;
-  int tags_per_object = 5;
-  int execs_per_object = 10;
+  int tags_per_object = 3;
+  int execs_per_object = 5;
+
+  int seed = 7;
+  std::mt19937 gen(seed);
+  std::uniform_int_distribution<> distbound(1, nboundaries);
+  std::uniform_int_distribution<> distsubdomain(1, nsubdomains);
+  std::uniform_int_distribution<> disttag(1, ntags);
+  std::uniform_int_distribution<> distexecon(1, nexecons);
+  std::uniform_int_distribution<> distthread(1, nthreads);
+  std::uniform_int_distribution<> distsystem(1, nsystems);
+  // mean number of subdomains and boundaries per object is 10 and 3 respectively
+  std::geometric_distribution<> distsubdomains_per_object(1.0/10.0);
+  std::geometric_distribution<> distboundaries_per_object(1.0/3.0);
+
+  std::vector<std::string> tags;
+  for (int i = 0; i < ntags; i++)
+      tags.push_back(std::to_string(i));
+
+  std::vector<std::string> systems;
+  for (int i = 0; i < nsystems; i++)
+      systems.push_back(std::to_string(i));
+
+
+  int tagtally = 0;
+  int boundtally = 0;
+  int subdomaintally = 0;
+  int exectally = 0;
+
+  std::vector<std::unique_ptr<Object>> objects;
+  for (int i = 0; i < nobjects; i++)
+  {
+    if (i % 1000 == 0)
+        std::cout << "created " << i << " objects\n";
+    auto object = new Object();
+    objects.emplace_back(object);
+    auto& obj = *objects[i];
+    obj.thread = distthread(gen);
+    obj.enabled = true;
+    obj.system = systems[distsystem(gen) - 1];
+
+    for (int j = 0; j < tags_per_object; j++)
+        obj.tags.push_back(tags[disttag(gen) - 1]);
+    for (int j = 0; j < distboundaries_per_object(gen); j++)
+        obj.boundaries.push_back(distbound(gen));
+    for (int j = 0; j < distsubdomains_per_object(gen); j++)
+        obj.subdomains.push_back(distsubdomain(gen));
+    for (int j = 0; j < execs_per_object; j++)
+        obj.execute_ons.push_back(distexecon(gen));
+
+    tagtally += obj.tags.size();
+    boundtally += obj.boundaries.size();
+    subdomaintally += obj.subdomains.size();
+    exectally += obj.execute_ons.size();
+  }
 
   SqlStore store;
   Warehouse w(store);
+
+  auto start = std::chrono::steady_clock::now();
+  for (auto & obj : objects)
+      w.addObject(std::move(obj));
+  auto end = std::chrono::steady_clock::now();
+
+  // Store the time difference between start and end
+  auto diff = end - start;
+  std::cout << "time: " << std::chrono::duration_cast<std::chrono::milliseconds>(diff).count() << " ms\n";
+  std::cout << "    total tags = " << tagtally << "\n";
+  std::cout << "    total subdomains = " << subdomaintally << "\n";
+  std::cout << "    total boundaries = " << boundtally << "\n";
+  std::cout << "    total execute_ons = " << exectally << "\n";
 
   return 0;
 }

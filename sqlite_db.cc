@@ -33,7 +33,6 @@ void SqlStatement::Exec() {
 
 void SqlStatement::Reset() {
   Must(sqlite3_reset(stmt_));
-  Must(sqlite3_clear_bindings(stmt_));
 }
 
 bool SqlStatement::Step() {
