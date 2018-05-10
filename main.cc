@@ -7,6 +7,7 @@
 #include <vector>
 #include <random>
 #include <chrono>
+#include <functional>
 
 class Object
 {
@@ -32,6 +33,7 @@ public:
 //     * enabled
 enum class AttributeId
 {
+  None,
   Thread,
   System,
   Enabled,
@@ -109,7 +111,72 @@ public:
 
   virtual std::vector<int> query(const std::vector<Attribute> & conds) override
   {
-      throw std::runtime_error("not implemented");
+    std::vector<int> objs;
+    for (int i = 0; i < _system.size(); i++)
+    {
+        bool passes = true;
+        for (auto& cond : conds)
+        {
+            switch (cond.id)
+            {
+            case AttributeId::Thread:
+                if (cond.value != _thread[i])
+                    passes = false;
+                break;
+            case AttributeId::System:
+                if (cond.strvalue != _system[i])
+                    passes = false;
+                break;
+            case AttributeId::Enabled:
+                if (cond.value != _enabled[i])
+                    passes = false;
+                break;
+            case AttributeId::Boundary:
+                passes = false;
+                for (auto val : _boundaries[i])
+                    if (cond.value == val)
+                    {
+                        passes = true;
+                        break;
+                    }
+                break;
+            case AttributeId::Subdomain:
+                passes = false;
+                for (auto val : _subdomains[i])
+                    if (cond.value == val)
+                    {
+                        passes = true;
+                        break;
+                    }
+                break;
+            case AttributeId::ExecOn:
+                passes = false;
+                for (auto val : _execute_ons[i])
+                    if (cond.value == val)
+                    {
+                        passes = true;
+                        break;
+                    }
+                break;
+            case AttributeId::Tag:
+                passes = false;
+                for (auto val : _tags[i])
+                    if (cond.strvalue == val)
+                    {
+                        passes = true;
+                        break;
+                    }
+                break;
+            default:
+                throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
+            }
+            if (!passes)
+                break;
+        }
+        if (passes)
+            objs.push_back(i);
+    }
+    return objs;
   }
 
   virtual void set(int obj_id, const Attribute & attrib) override
@@ -140,6 +207,7 @@ public:
     _db.Execute("CREATE TABLE boundaries (id INTEGER, boundary INTEGER);");
     _db.Execute("CREATE TABLE execute_ons (id INTEGER, execute_on INTEGER);");
     _db.Execute("CREATE TABLE tags (id INTEGER, tag TEXT);");
+
     _tblmain = _db.Prepare("INSERT INTO objects (id, system, thread, enabled) VALUES (?,?,?,?);");
     _tbltag = _db.Prepare("INSERT INTO tags (id, tag) VALUES (?,?);");
     _tblbound = _db.Prepare("INSERT INTO boundaries (id, boundary) VALUES (?,?);");
@@ -149,16 +217,15 @@ public:
 
   ~SqlStore()
   {
+    auto s1 = _db.Prepare("PRAGMA PAGE_SIZE;");
+    s1->Step();
+    int pagesize = s1->GetInt(0);
 
-      auto s1 = _db.Prepare("PRAGMA PAGE_SIZE;");
-      s1->Step();
-      int pagesize = s1->GetInt(0);
+    auto s2 = _db.Prepare("PRAGMA PAGE_COUNT;");
+    s2->Step();
+    int pagecount = s2->GetInt(0);
 
-      auto s2 = _db.Prepare("PRAGMA PAGE_COUNT;");
-      s2->Step();
-      int pagecount = s2->GetInt(0);
-
-      std::cout << "Sqlite db size: " << pagecount * pagesize / 1000 << " kB (page_size=" << pagesize << ", pagecount=" << pagecount << ")\n";
+    std::cout << "Sqlite db size: " << pagecount * pagesize / 1000 << " kB (page_size=" << pagesize << ", pagecount=" << pagecount << ")\n";
   };
 
   virtual void add(int obj_id, const std::vector<Storage::Attribute> & attribs) override
@@ -227,13 +294,94 @@ public:
     {
       _in_transaction = false;
       _db.Execute("END TRANSACTION;");
+
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx_subdomain ON subdomains (subdomain, id);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx_boundary ON boundaries (boundary, id);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx_tag ON tags (tag, id);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx_execute_on ON execute_ons (execute_on, id);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx_objects ON objects (system, thread, enabled, id);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_subdomain ON subdomains (id, subdomain);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_boundary ON boundaries (id, boundary);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_tag ON tags (id, tag);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_execute_on ON execute_ons (id, execute_on);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_objects ON objects (id, system, thread, enabled);");
+      _db.Execute("ANALYZE;");
     }
 
-    return {};
+    std::string sql = "SELECT objects.id FROM objects"
+                      " JOIN boundaries ON objects.id = boundaries.id"
+                      " JOIN subdomains ON objects.id = subdomains.id"
+                      " JOIN execute_ons ON objects.id = execute_ons.id"
+                      " JOIN tags ON objects.id = tags.id";
+    std::vector<std::function<void (SqlStatement::Ptr &)>> bindings;
+    for (int i = 0; i < conds.size(); i++)
+    {
+        auto& cond = conds[i];
+        if (i == 0)
+            sql += " WHERE";
+        if ( i > 0)
+            sql += " AND";
+
+        switch (cond.id)
+        {
+        case AttributeId::Thread:
+            sql += " objects.thread=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
+            break;
+        case AttributeId::System:
+            sql += " objects.system=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindText(i+1, cond.strvalue.c_str());});
+            break;
+        case AttributeId::Enabled:
+            sql += " objects.enabled=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
+            break;
+        case AttributeId::Boundary:
+            sql += " boundaries.boundary=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
+            break;
+        case AttributeId::Subdomain:
+            sql += " subdomains.subdomain=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
+            break;
+        case AttributeId::ExecOn:
+            sql += " execute_ons.execute_on=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
+            break;
+        case AttributeId::Tag:
+            sql += " tags.tag=?";
+            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindText(i+1, cond.strvalue.c_str());});
+            break;
+        default:
+            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
+        }
+    }
+
+    //std::cout << "running query: " << sql << ";\n";
+    auto stmt = _db.Prepare(sql + ";");
+    for (auto& func : bindings)
+        func(stmt);
+
+    std::vector<int> objs;
+    while (stmt->Step())
+        objs.push_back(stmt->GetInt(0));
+
+    auto plan = _db.Prepare("EXPLAIN QUERY PLAN " + sql + ";");
+    //std::cout << "query plan:\n";
+    while(plan->Step())
+    {
+        int n = 0;
+        char* s = plan->GetText(3, &n);
+        std::string text(s, n);
+        //std::cout << "    " << plan->GetInt(0) << "|" << plan->GetInt(1) << "|" << plan->GetInt(2) << "|   " << text << "\n";
+    }
+
+    return objs;
   }
 
   virtual void set(int obj_id, const Storage::Attribute & attrib) override
   {
+      throw std::runtime_error("not implemented");
   }
 
 private:
@@ -249,8 +397,8 @@ private:
 class Warehouse
 {
 public:
-  Warehouse(Storage & s, bool use_cache = true)
-    : _store(s), _use_cache(use_cache){};
+  Warehouse(Storage & s)
+    : _store(s) {};
 
   void addObject(std::unique_ptr<Object> obj)
   {
@@ -278,16 +426,6 @@ public:
   int prepare(const std::vector<Storage::Attribute> & conds)
   {
     auto obj_ids = _store.query(conds);
-
-    // see if this query matches an existing cached one.
-    if (_use_cache && _query_cache.size() < 20)
-    {
-      for (int i = 0; i < _query_cache.size(); i++)
-      {
-        if (_query_cache[i] == conds)
-          return i;
-      }
-    }
 
     _query_dirty.push_back(true);
     _obj_cache.push_back({});
@@ -317,7 +455,6 @@ private:
   Storage & _store;
   std::vector<std::unique_ptr<Object>> _objects;
 
-  bool _use_cache;
   std::vector<std::vector<Object *>> _obj_cache;
   std::vector<std::vector<Storage::Attribute>> _query_cache;
   std::vector<bool> _query_dirty;
@@ -336,8 +473,7 @@ tagid(const std::string & s)
 int
 main(int argc, char ** argv)
 {
-  int nqueries = 1000;
-
+  //////////////////// create objects /////////////////////////////
   int nboundaries = 1000;
   int nsubdomains = 10000;
   int nthreads = 10;
@@ -404,6 +540,36 @@ main(int argc, char ** argv)
     exectally += obj.execute_ons.size();
   }
 
+  ////////////// create queries /////////////////////
+  int nqueries = 1000;
+  int conds_per_query = 10;
+  std::uniform_int_distribution<> distbool(0, 1);
+  std::uniform_int_distribution<> distconds(0, 2);
+  std::vector<std::vector<Storage::Attribute>> queries;
+  for (int i = 0; i < nqueries; i++)
+  {
+    std::vector<Storage::Attribute> conds;
+    if (distbool(gen))
+      conds.push_back({AttributeId::Thread, distthread(gen), ""});
+    if (distbool(gen))
+      conds.push_back({AttributeId::System, 0, systems[distsystem(gen) - 1]});
+
+    int n = distconds(gen);
+    for (int j = 0; j < n; j++)
+      conds.push_back({AttributeId::Tag, 0, tags[disttag(gen) - 1]});
+    n = distconds(gen);
+    for (int j = 0; j < n; j++)
+      conds.push_back({AttributeId::Subdomain, disttag(gen), ""});
+    n = distconds(gen);
+    for (int j = 0; j < n; j++)
+      conds.push_back({AttributeId::Boundary, disttag(gen), ""});
+    n = distconds(gen);
+    for (int j = 0; j < n; j++)
+      conds.push_back({AttributeId::ExecOn, disttag(gen), ""});
+    queries.push_back(conds);
+  }
+
+  //////////////////// insert objects ////////////////////////////////
   SqlStore sstore;
   VecStore vstore;
   Warehouse w(vstore);
@@ -413,13 +579,45 @@ main(int argc, char ** argv)
       w.addObject(std::move(obj));
   auto end = std::chrono::steady_clock::now();
 
-  // Store the time difference between start and end
   auto diff = end - start;
-  std::cout << "time: " << std::chrono::duration_cast<std::chrono::milliseconds>(diff).count() << " ms\n";
-  std::cout << "    total tags = " << tagtally << "\n";
-  std::cout << "    total subdomains = " << subdomaintally << "\n";
-  std::cout << "    total boundaries = " << boundtally << "\n";
-  std::cout << "    total execute_ons = " << exectally << "\n";
+  std::cout << "insert time: " << std::chrono::duration_cast<std::chrono::milliseconds>(diff).count() << " ms\n";
+
+  ////////////////// query objects (with cache) ////////////////////////
+
+  // 1st run (cold cache)
+  start = std::chrono::steady_clock::now();
+  int countn = 0;
+  std::vector<int> queryids;
+  int qcount = 0;
+  for (auto & q : queries)
+  {
+      qcount++;
+      std::cout << "running query " << qcount << "\n";
+      queryids.push_back(w.prepare(q));
+      auto& v = w.query(queryids.back());
+      countn += v.size();
+  }
+  end = std::chrono::steady_clock::now();
+  diff = end - start;
+  std::cout << "query 1st time: " << std::chrono::duration_cast<std::chrono::milliseconds>(diff).count() << " ms (" << countn << " total results)\n";
+
+  // 2nd run with cache
+  countn = 0;
+  start = std::chrono::steady_clock::now();
+  for (auto & q : queryids)
+  {
+      auto& v = w.query(q);
+      countn += v.size();
+  }
+  end = std::chrono::steady_clock::now();
+  diff = end - start;
+  std::cout << "query 2nd time: " << std::chrono::duration_cast<std::chrono::milliseconds>(diff).count() << " ms (" << countn << " total results)\n";
+
+  std::cout << "total stored items:\n";
+  std::cout << "    tags = " << tagtally << "\n";
+  std::cout << "    subdomains = " << subdomaintally << "\n";
+  std::cout << "    boundaries = " << boundtally << "\n";
+  std::cout << "    execute_ons = " << exectally << "\n";
 
   return 0;
 }
