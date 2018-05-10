@@ -60,6 +60,75 @@ public:
   virtual void set(int obj_id, const Attribute & attrib) = 0;
 };
 
+class VecStore : public Storage
+{
+public:
+  virtual void add(int obj_id, const std::vector<Attribute> & attribs) override
+  {
+    if (obj_id < _system.size())
+      throw std::runtime_error("object with id " + std::to_string(obj_id) + " already added");
+
+    _system.push_back("");
+    _thread.push_back(-1);
+    _enabled.push_back(true);
+    _tags.push_back({});
+    _boundaries.push_back({});
+    _subdomains.push_back({});
+    _execute_ons.push_back({});
+
+    for (auto& attrib : attribs)
+    {
+        switch (attrib.id)
+        {
+        case AttributeId::Thread:
+            _thread.back() = attrib.value;
+            break;
+        case AttributeId::System:
+            _system.back() = attrib.strvalue;
+            break;
+        case AttributeId::Enabled:
+            _enabled.back() = attrib.value;
+            break;
+        case AttributeId::Boundary:
+            _boundaries.back().push_back(attrib.value);
+            break;
+        case AttributeId::Subdomain:
+            _subdomains.back().push_back(attrib.value);
+            break;
+        case AttributeId::ExecOn:
+            _execute_ons.back().push_back(attrib.value);
+            break;
+        case AttributeId::Tag:
+            _tags.back().push_back(attrib.strvalue);
+            break;
+        default:
+            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(attrib.id)));
+        }
+    }
+  }
+
+  virtual std::vector<int> query(const std::vector<Attribute> & conds) override
+  {
+      throw std::runtime_error("not implemented");
+  }
+
+  virtual void set(int obj_id, const Attribute & attrib) override
+  {
+      if (obj_id >= _system.size())
+          throw std::runtime_error("no object with id " + std::to_string(obj_id));
+      throw std::runtime_error("not implemented");
+  }
+
+private:
+  std::vector<std::string> _system;
+  std::vector<int> _thread;
+  std::vector<bool> _enabled;
+  std::vector<std::vector<std::string>> _tags;
+  std::vector<std::vector<int>> _boundaries;
+  std::vector<std::vector<int>> _subdomains;
+  std::vector<std::vector<int>> _execute_ons;
+};
+
 class SqlStore : public Storage
 {
 public:
@@ -335,8 +404,9 @@ main(int argc, char ** argv)
     exectally += obj.execute_ons.size();
   }
 
-  SqlStore store;
-  Warehouse w(store);
+  SqlStore sstore;
+  VecStore vstore;
+  Warehouse w(vstore);
 
   auto start = std::chrono::steady_clock::now();
   for (auto & obj : objects)
