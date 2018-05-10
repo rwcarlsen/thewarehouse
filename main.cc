@@ -1,25 +1,25 @@
 
 #include "sqlite_db.h"
 
-#include <iostream>
-#include <map>
-#include <string>
-#include <vector>
-#include <random>
 #include <chrono>
 #include <functional>
+#include <iostream>
+#include <map>
+#include <random>
+#include <string>
+#include <vector>
 
 class Object
 {
 public:
-    int thread = 0;
-    std::string system;
-    bool enabled = true;
+  int thread = 0;
+  std::string system;
+  bool enabled = true;
 
-    std::vector<int> boundaries;
-    std::vector<int> subdomains;
-    std::vector<std::string> tags;
-    std::vector<int> execute_ons;
+  std::vector<int> boundaries;
+  std::vector<int> subdomains;
+  std::vector<std::string> tags;
+  std::vector<int> execute_ons;
 };
 
 // attributes include:
@@ -37,10 +37,10 @@ enum class AttributeId
   Thread,
   System,
   Enabled,
-  Tag,      // multiple
-  Boundary, // multiple
+  Tag,       // multiple
+  Boundary,  // multiple
   Subdomain, // multiple
-  ExecOn, // multiple
+  ExecOn,    // multiple
 };
 
 class Storage
@@ -78,34 +78,34 @@ public:
     _subdomains.push_back({});
     _execute_ons.push_back({});
 
-    for (auto& attrib : attribs)
+    for (auto & attrib : attribs)
     {
-        switch (attrib.id)
-        {
+      switch (attrib.id)
+      {
         case AttributeId::Thread:
-            _thread.back() = attrib.value;
-            break;
+          _thread.back() = attrib.value;
+          break;
         case AttributeId::System:
-            _system.back() = attrib.strvalue;
-            break;
+          _system.back() = attrib.strvalue;
+          break;
         case AttributeId::Enabled:
-            _enabled.back() = attrib.value;
-            break;
+          _enabled.back() = attrib.value;
+          break;
         case AttributeId::Boundary:
-            _boundaries.back().push_back(attrib.value);
-            break;
+          _boundaries.back().push_back(attrib.value);
+          break;
         case AttributeId::Subdomain:
-            _subdomains.back().push_back(attrib.value);
-            break;
+          _subdomains.back().push_back(attrib.value);
+          break;
         case AttributeId::ExecOn:
-            _execute_ons.back().push_back(attrib.value);
-            break;
+          _execute_ons.back().push_back(attrib.value);
+          break;
         case AttributeId::Tag:
-            _tags.back().push_back(attrib.strvalue);
-            break;
+          _tags.back().push_back(attrib.strvalue);
+          break;
         default:
-            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(attrib.id)));
-        }
+          throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(attrib.id)));
+      }
     }
   }
 
@@ -114,76 +114,76 @@ public:
     std::vector<int> objs;
     for (int i = 0; i < _system.size(); i++)
     {
-        bool passes = true;
-        for (auto& cond : conds)
+      bool passes = true;
+      for (auto & cond : conds)
+      {
+        switch (cond.id)
         {
-            switch (cond.id)
-            {
-            case AttributeId::Thread:
-                if (cond.value != _thread[i])
-                    passes = false;
+          case AttributeId::Thread:
+            if (cond.value != _thread[i])
+              passes = false;
+            break;
+          case AttributeId::System:
+            if (cond.strvalue != _system[i])
+              passes = false;
+            break;
+          case AttributeId::Enabled:
+            if (cond.value != _enabled[i])
+              passes = false;
+            break;
+          case AttributeId::Boundary:
+            passes = false;
+            for (auto val : _boundaries[i])
+              if (cond.value == val)
+              {
+                passes = true;
                 break;
-            case AttributeId::System:
-                if (cond.strvalue != _system[i])
-                    passes = false;
+              }
+            break;
+          case AttributeId::Subdomain:
+            passes = false;
+            for (auto val : _subdomains[i])
+              if (cond.value == val)
+              {
+                passes = true;
                 break;
-            case AttributeId::Enabled:
-                if (cond.value != _enabled[i])
-                    passes = false;
+              }
+            break;
+          case AttributeId::ExecOn:
+            passes = false;
+            for (auto val : _execute_ons[i])
+              if (cond.value == val)
+              {
+                passes = true;
                 break;
-            case AttributeId::Boundary:
-                passes = false;
-                for (auto val : _boundaries[i])
-                    if (cond.value == val)
-                    {
-                        passes = true;
-                        break;
-                    }
+              }
+            break;
+          case AttributeId::Tag:
+            passes = false;
+            for (auto val : _tags[i])
+              if (cond.strvalue == val)
+              {
+                passes = true;
                 break;
-            case AttributeId::Subdomain:
-                passes = false;
-                for (auto val : _subdomains[i])
-                    if (cond.value == val)
-                    {
-                        passes = true;
-                        break;
-                    }
-                break;
-            case AttributeId::ExecOn:
-                passes = false;
-                for (auto val : _execute_ons[i])
-                    if (cond.value == val)
-                    {
-                        passes = true;
-                        break;
-                    }
-                break;
-            case AttributeId::Tag:
-                passes = false;
-                for (auto val : _tags[i])
-                    if (cond.strvalue == val)
-                    {
-                        passes = true;
-                        break;
-                    }
-                break;
-            default:
-                throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
-            }
-            if (!passes)
-                break;
+              }
+            break;
+          default:
+            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
         }
-        if (passes)
-            objs.push_back(i);
+        if (!passes)
+          break;
+      }
+      if (passes)
+        objs.push_back(i);
     }
     return objs;
   }
 
   virtual void set(int obj_id, const Attribute & attrib) override
   {
-      if (obj_id >= _system.size())
-          throw std::runtime_error("no object with id " + std::to_string(obj_id));
-      throw std::runtime_error("not implemented");
+    if (obj_id >= _system.size())
+      throw std::runtime_error("no object with id " + std::to_string(obj_id));
+    throw std::runtime_error("not implemented");
   }
 
 private:
@@ -243,42 +243,42 @@ public:
     std::vector<int> bounds;
     std::vector<int> subdomains;
     std::vector<int> execons;
-    for (auto& attrib : attribs)
+    for (auto & attrib : attribs)
     {
-        switch (attrib.id)
-        {
+      switch (attrib.id)
+      {
         case AttributeId::Thread:
-            thread = attrib.value;
-            break;
+          thread = attrib.value;
+          break;
         case AttributeId::System:
-            system = attrib.strvalue;
-            break;
+          system = attrib.strvalue;
+          break;
         case AttributeId::Enabled:
-            enabled = attrib.value;
-            break;
+          enabled = attrib.value;
+          break;
         case AttributeId::Boundary:
-            _tblbound->BindInt(1, obj_id);
-            _tblbound->BindInt(2, attrib.value);
-            _tblbound->Exec();
-            break;
+          _tblbound->BindInt(1, obj_id);
+          _tblbound->BindInt(2, attrib.value);
+          _tblbound->Exec();
+          break;
         case AttributeId::Subdomain:
-            _tblsubdomain->BindInt(1, obj_id);
-            _tblsubdomain->BindInt(2, attrib.value);
-            _tblsubdomain->Exec();
-            break;
+          _tblsubdomain->BindInt(1, obj_id);
+          _tblsubdomain->BindInt(2, attrib.value);
+          _tblsubdomain->Exec();
+          break;
         case AttributeId::ExecOn:
-            _tblexecons->BindInt(1, obj_id);
-            _tblexecons->BindInt(2, attrib.value);
-            _tblexecons->Exec();
-            break;
+          _tblexecons->BindInt(1, obj_id);
+          _tblexecons->BindInt(2, attrib.value);
+          _tblexecons->Exec();
+          break;
         case AttributeId::Tag:
-            _tbltag->BindInt(1, obj_id);
-            _tbltag->BindText(2, attrib.strvalue.c_str());
-            _tbltag->Exec();
-            break;
+          _tbltag->BindInt(1, obj_id);
+          _tbltag->BindText(2, attrib.strvalue.c_str());
+          _tbltag->Exec();
+          break;
         default:
-            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(attrib.id)));
-        }
+          throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(attrib.id)));
+      }
     }
 
     _tblmain->BindInt(1, obj_id);
@@ -313,67 +313,67 @@ public:
                       " JOIN subdomains ON objects.id = subdomains.id"
                       " JOIN execute_ons ON objects.id = execute_ons.id"
                       " JOIN tags ON objects.id = tags.id";
-    std::vector<std::function<void (SqlStatement::Ptr &)>> bindings;
+    std::vector<std::function<void(SqlStatement::Ptr &)>> bindings;
     for (int i = 0; i < conds.size(); i++)
     {
-        auto& cond = conds[i];
-        if (i == 0)
-            sql += " WHERE";
-        if ( i > 0)
-            sql += " AND";
+      auto & cond = conds[i];
+      if (i == 0)
+        sql += " WHERE";
+      if (i > 0)
+        sql += " AND";
 
-        switch (cond.id)
-        {
+      switch (cond.id)
+      {
         case AttributeId::Thread:
-            sql += " objects.thread=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
-            break;
+          sql += " objects.thread=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          break;
         case AttributeId::System:
-            sql += " objects.system=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindText(i+1, cond.strvalue.c_str());});
-            break;
+          sql += " objects.system=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindText(i + 1, cond.strvalue.c_str()); });
+          break;
         case AttributeId::Enabled:
-            sql += " objects.enabled=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
-            break;
+          sql += " objects.enabled=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          break;
         case AttributeId::Boundary:
-            sql += " boundaries.boundary=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
-            break;
+          sql += " boundaries.boundary=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          break;
         case AttributeId::Subdomain:
-            sql += " subdomains.subdomain=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
-            break;
+          sql += " subdomains.subdomain=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          break;
         case AttributeId::ExecOn:
-            sql += " execute_ons.execute_on=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindInt(i+1, cond.value);});
-            break;
+          sql += " execute_ons.execute_on=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          break;
         case AttributeId::Tag:
-            sql += " tags.tag=?";
-            bindings.push_back([i,cond](SqlStatement::Ptr & stmt){stmt->BindText(i+1, cond.strvalue.c_str());});
-            break;
+          sql += " tags.tag=?";
+          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindText(i + 1, cond.strvalue.c_str()); });
+          break;
         default:
-            throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
-        }
+          throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
+      }
     }
 
     //std::cout << "running query: " << sql << ";\n";
     auto stmt = _db.Prepare(sql + ";");
-    for (auto& func : bindings)
-        func(stmt);
+    for (auto & func : bindings)
+      func(stmt);
 
     std::vector<int> objs;
     while (stmt->Step())
-        objs.push_back(stmt->GetInt(0));
+      objs.push_back(stmt->GetInt(0));
 
     auto plan = _db.Prepare("EXPLAIN QUERY PLAN " + sql + ";");
     //std::cout << "query plan:\n";
-    while(plan->Step())
+    while (plan->Step())
     {
-        int n = 0;
-        char* s = plan->GetText(3, &n);
-        std::string text(s, n);
-        //std::cout << "    " << plan->GetInt(0) << "|" << plan->GetInt(1) << "|" << plan->GetInt(2) << "|   " << text << "\n";
+      int n = 0;
+      char * s = plan->GetText(3, &n);
+      std::string text(s, n);
+      //std::cout << "    " << plan->GetInt(0) << "|" << plan->GetInt(1) << "|" << plan->GetInt(2) << "|   " << text << "\n";
     }
 
     return objs;
@@ -381,7 +381,7 @@ public:
 
   virtual void set(int obj_id, const Storage::Attribute & attrib) override
   {
-      throw std::runtime_error("not implemented");
+    throw std::runtime_error("not implemented");
   }
 
 private:
@@ -398,7 +398,7 @@ class Warehouse
 {
 public:
   Warehouse(Storage & s)
-    : _store(s) {};
+    : _store(s){};
 
   void addObject(std::unique_ptr<Object> obj)
   {
@@ -409,14 +409,14 @@ public:
     attribs.push_back({AttributeId::System, 0, obj->system});
     attribs.push_back({AttributeId::Thread, obj->thread, ""});
     attribs.push_back({AttributeId::Enabled, obj->enabled, ""});
-    for (auto& tag : obj->tags)
-        attribs.push_back({AttributeId::Tag, 0, tag});
-    for (auto& sub : obj->subdomains)
-        attribs.push_back({AttributeId::Subdomain, sub, ""});
-    for (auto& bound : obj->boundaries)
-        attribs.push_back({AttributeId::Boundary, bound, ""});
-    for (auto& on : obj->execute_ons)
-        attribs.push_back({AttributeId::ExecOn, on, ""});
+    for (auto & tag : obj->tags)
+      attribs.push_back({AttributeId::Tag, 0, tag});
+    for (auto & sub : obj->subdomains)
+      attribs.push_back({AttributeId::Subdomain, sub, ""});
+    for (auto & bound : obj->boundaries)
+      attribs.push_back({AttributeId::Boundary, bound, ""});
+    for (auto & on : obj->execute_ons)
+      attribs.push_back({AttributeId::ExecOn, on, ""});
 
     _objects.push_back(std::move(obj));
     _store.add(_objects.size() - 1, attribs);
@@ -496,17 +496,16 @@ main(int argc, char ** argv)
   std::uniform_int_distribution<> distthread(1, nthreads);
   std::uniform_int_distribution<> distsystem(1, nsystems);
   // mean number of subdomains and boundaries per object is 10 and 3 respectively
-  std::geometric_distribution<> distsubdomains_per_object(1.0/10.0);
-  std::geometric_distribution<> distboundaries_per_object(1.0/3.0);
+  std::geometric_distribution<> distsubdomains_per_object(1.0 / 10.0);
+  std::geometric_distribution<> distboundaries_per_object(1.0 / 3.0);
 
   std::vector<std::string> tags;
   for (int i = 0; i < ntags; i++)
-      tags.push_back(std::to_string(i));
+    tags.push_back(std::to_string(i));
 
   std::vector<std::string> systems;
   for (int i = 0; i < nsystems; i++)
-      systems.push_back(std::to_string(i));
-
+    systems.push_back(std::to_string(i));
 
   int tagtally = 0;
   int boundtally = 0;
@@ -517,22 +516,22 @@ main(int argc, char ** argv)
   for (int i = 0; i < nobjects; i++)
   {
     if (i % 1000 == 0)
-        std::cout << "created " << i << " objects\n";
+      std::cout << "created " << i << " objects\n";
     auto object = new Object();
     objects.emplace_back(object);
-    auto& obj = *objects[i];
+    auto & obj = *objects[i];
     obj.thread = distthread(gen);
     obj.enabled = true;
     obj.system = systems[distsystem(gen) - 1];
 
     for (int j = 0; j < tags_per_object; j++)
-        obj.tags.push_back(tags[disttag(gen) - 1]);
+      obj.tags.push_back(tags[disttag(gen) - 1]);
     for (int j = 0; j < distboundaries_per_object(gen); j++)
-        obj.boundaries.push_back(distbound(gen));
+      obj.boundaries.push_back(distbound(gen));
     for (int j = 0; j < distsubdomains_per_object(gen); j++)
-        obj.subdomains.push_back(distsubdomain(gen));
+      obj.subdomains.push_back(distsubdomain(gen));
     for (int j = 0; j < execs_per_object; j++)
-        obj.execute_ons.push_back(distexecon(gen));
+      obj.execute_ons.push_back(distexecon(gen));
 
     tagtally += obj.tags.size();
     boundtally += obj.boundaries.size();
@@ -576,7 +575,7 @@ main(int argc, char ** argv)
 
   auto start = std::chrono::steady_clock::now();
   for (auto & obj : objects)
-      w.addObject(std::move(obj));
+    w.addObject(std::move(obj));
   auto end = std::chrono::steady_clock::now();
 
   auto diff = end - start;
@@ -591,11 +590,11 @@ main(int argc, char ** argv)
   int qcount = 0;
   for (auto & q : queries)
   {
-      qcount++;
-      std::cout << "running query " << qcount << "\n";
-      queryids.push_back(w.prepare(q));
-      auto& v = w.query(queryids.back());
-      countn += v.size();
+    qcount++;
+    std::cout << "running query " << qcount << "\n";
+    queryids.push_back(w.prepare(q));
+    auto & v = w.query(queryids.back());
+    countn += v.size();
   }
   end = std::chrono::steady_clock::now();
   diff = end - start;
@@ -606,8 +605,8 @@ main(int argc, char ** argv)
   start = std::chrono::steady_clock::now();
   for (auto & q : queryids)
   {
-      auto& v = w.query(q);
-      countn += v.size();
+    auto & v = w.query(q);
+    countn += v.size();
   }
   end = std::chrono::steady_clock::now();
   diff = end - start;
