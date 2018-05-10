@@ -308,73 +308,80 @@ public:
       _db.Execute("ANALYZE;");
     }
 
-    std::string sql = "SELECT objects.id FROM objects"
-                      " JOIN boundaries ON objects.id = boundaries.id"
-                      " JOIN subdomains ON objects.id = subdomains.id"
-                      " JOIN execute_ons ON objects.id = execute_ons.id"
-                      " JOIN tags ON objects.id = tags.id";
+    std::string joins = "SELECT DISTINCT objects.id FROM objects";
+    std::string tail;
     std::vector<std::function<void(SqlStatement::Ptr &)>> bindings;
+    int joincount = 1;
+    int tailcount = 0;
     for (int i = 0; i < conds.size(); i++)
     {
       auto & cond = conds[i];
-      if (i == 0)
-        sql += " WHERE";
-      if (i > 0)
-        sql += " AND";
 
       switch (cond.id)
       {
         case AttributeId::Thread:
-          sql += " objects.thread=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          tail += " AND objects.thread=?";
+          bindings.push_back([joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount+tailcount, cond.value); });
+          tailcount++;
           break;
         case AttributeId::System:
-          sql += " objects.system=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindText(i + 1, cond.strvalue.c_str()); });
+          tail += " AND objects.system=?";
+          bindings.push_back([joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindText(joincount+tailcount, cond.strvalue.c_str()); });
+          tailcount++;
           break;
         case AttributeId::Enabled:
-          sql += " objects.enabled=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          tail += " AND objects.enabled=?";
+          bindings.push_back([joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount+tailcount, cond.value); });
+          tailcount++;
           break;
         case AttributeId::Boundary:
-          sql += " boundaries.boundary=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          joins += " JOIN boundaries AS b" + std::to_string(i) + " ON objects.id=b" + std::to_string(i) + ".id AND b" + std::to_string(i) + ".boundary=?";
+          bindings.push_back([joincount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount, cond.value); });
+          joincount++;
           break;
         case AttributeId::Subdomain:
-          sql += " subdomains.subdomain=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          joins += " JOIN subdomains AS s" + std::to_string(i) + " ON objects.id=s" + std::to_string(i) + ".id AND s" + std::to_string(i) + ".subdomain=?";
+          bindings.push_back([joincount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount, cond.value); });
+          joincount++;
           break;
         case AttributeId::ExecOn:
-          sql += " execute_ons.execute_on=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(i + 1, cond.value); });
+          joins += " JOIN execute_ons AS e" + std::to_string(i) + " ON objects.id=e" + std::to_string(i) + ".id AND e" + std::to_string(i) + ".execute_on=?";
+          bindings.push_back([joincount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount, cond.value); });
+          joincount++;
           break;
         case AttributeId::Tag:
-          sql += " tags.tag=?";
-          bindings.push_back([i, cond](SqlStatement::Ptr & stmt) { stmt->BindText(i + 1, cond.strvalue.c_str()); });
+          joins += " JOIN tags AS t" + std::to_string(i) + " ON objects.id=t" + std::to_string(i) + ".id AND t" + std::to_string(i) + ".tag=?";
+          bindings.push_back([joincount, cond](SqlStatement::Ptr & stmt) { stmt->BindText(joincount, cond.strvalue.c_str()); });
+          joincount++;
           break;
         default:
           throw std::runtime_error("unknown AttributeId " + std::to_string(static_cast<int>(cond.id)));
       }
     }
 
-    //std::cout << "running query: " << sql << ";\n";
-    auto stmt = _db.Prepare(sql + ";");
+    if (tail.size() > 0)
+      tail = " WHERE " + tail.substr(4, std::string::npos);
+
+    std::string sql = joins + tail + ";";
+    std::cout << "  sql: " << sql << "\n";
+    auto stmt = _db.Prepare(sql);
     for (auto & func : bindings)
       func(stmt);
 
     std::vector<int> objs;
     while (stmt->Step())
       objs.push_back(stmt->GetInt(0));
+    std::cout << "  nresults=" << objs.size() << "\n";
 
-    auto plan = _db.Prepare("EXPLAIN QUERY PLAN " + sql + ";");
+    //auto plan = _db.Prepare("EXPLAIN QUERY PLAN " + sql + ";");
     //std::cout << "query plan:\n";
-    while (plan->Step())
-    {
-      int n = 0;
-      char * s = plan->GetText(3, &n);
-      std::string text(s, n);
-      //std::cout << "    " << plan->GetInt(0) << "|" << plan->GetInt(1) << "|" << plan->GetInt(2) << "|   " << text << "\n";
-    }
+    //while (plan->Step())
+    //{
+    //  int n = 0;
+    //  char * s = plan->GetText(3, &n);
+    //  std::string text(s, n);
+    //  std::cout << "    " << plan->GetInt(0) << "|" << plan->GetInt(1) << "|" << plan->GetInt(2) << "|   " << text << "\n";
+    //}
 
     return objs;
   }
