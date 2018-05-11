@@ -293,17 +293,17 @@ public:
       _in_transaction = false;
       _db.Execute("END TRANSACTION;");
 
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx_objects ON objects (system, thread, enabled, id);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx_subdomain ON subdomains (subdomain, id);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx_boundary ON boundaries (boundary, id);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx_tag ON tags (tag, id);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx_execute_on ON execute_ons (execute_on, id);");
-      _db.Execute("CREATE INDEX IF NOT EXISTS idx_objects ON objects (system, thread, enabled, id);");
+      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_objects ON objects (id, system, thread, enabled);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx2_subdomain ON subdomains (id, subdomain);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx2_boundary ON boundaries (id, boundary);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx2_tag ON tags (id, tag);");
       _db.Execute("CREATE INDEX IF NOT EXISTS idx2_execute_on ON execute_ons (id, execute_on);");
-      _db.Execute("CREATE INDEX IF NOT EXISTS idx2_objects ON objects (id, system, thread, enabled);");
-      _db.Execute("ANALYZE;");
+      _db.Execute("ANALYZE");
     }
 
     std::string joins = "SELECT DISTINCT objects.id FROM objects";
@@ -361,7 +361,7 @@ public:
       tail = " WHERE " + tail.substr(4, std::string::npos);
 
     std::string sql = joins + tail + ";";
-    std::cout << "  sql: " << sql << "\n";
+    //std::cout << "  sql: " << sql << "\n";
     auto stmt = _db.Prepare(sql);
     for (auto & func : bindings)
       func(stmt);
@@ -369,8 +369,8 @@ public:
     std::vector<int> objs;
     while (stmt->Step())
       objs.push_back(stmt->GetInt(0));
-    std::cout << "  nresults=" << objs.size() << "\n";
 
+    //std::cout << "  nresults=" << objs.size() << "\n";
     //auto plan = _db.Prepare("EXPLAIN QUERY PLAN " + sql + ";");
     //std::cout << "query plan:\n";
     //while (plan->Step())
