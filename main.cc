@@ -319,17 +319,17 @@ public:
       {
         case AttributeId::Thread:
           tail += " AND objects.thread=?";
-          bindings.push_back([joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount+tailcount, cond.value); });
+          bindings.push_back([&joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount+tailcount, cond.value); });
           tailcount++;
           break;
         case AttributeId::System:
           tail += " AND objects.system=?";
-          bindings.push_back([joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindText(joincount+tailcount, cond.strvalue.c_str()); });
+          bindings.push_back([&joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindText(joincount+tailcount, cond.strvalue.c_str()); });
           tailcount++;
           break;
         case AttributeId::Enabled:
           tail += " AND objects.enabled=?";
-          bindings.push_back([joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount+tailcount, cond.value); });
+          bindings.push_back([&joincount, tailcount, cond](SqlStatement::Ptr & stmt) { stmt->BindInt(joincount+tailcount, cond.value); });
           tailcount++;
           break;
         case AttributeId::Boundary:
@@ -576,7 +576,7 @@ main(int argc, char ** argv)
   //////////////////// insert objects ////////////////////////////////
   SqlStore sstore;
   VecStore vstore;
-  Warehouse w(vstore);
+  Warehouse w(sstore);
 
   auto start = std::chrono::steady_clock::now();
   for (auto & obj : objects)
