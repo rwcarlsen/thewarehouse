@@ -6,7 +6,7 @@ src := $(shell ls *.cc)
 sqlitelib := libsqlite3.a
 
 tw: $(src) $(sqlitelib)
-	$(CXX) -std=c++11 -O3 -g $(CXXFLAGS) $^ -o $@
+	$(CXX) -std=c++11 -ldl -lpthread -l:libprofiler.so.0 -O3 -g $(CXXFLAGS) $^ -o $@
 
 $(sqlitelib): sqlite/sqlite3.c
 	$(CC) -O3 -c $< -o sqlite.o

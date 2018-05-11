@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <memory>
 
 class sqlite3;
 class sqlite3_stmt;

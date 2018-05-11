@@ -8,6 +8,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <memory>
 
 class Object
 {
