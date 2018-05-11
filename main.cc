@@ -121,16 +121,13 @@ public:
         switch (cond.id)
         {
           case AttributeId::Thread:
-            if (cond.value != _thread[i])
-              passes = false;
+            passes = cond.value == _thread[i];
             break;
           case AttributeId::System:
-            if (cond.strvalue != _system[i])
-              passes = false;
+            passes = cond.strvalue == _system[i];
             break;
           case AttributeId::Enabled:
-            if (cond.value != _enabled[i])
-              passes = false;
+            passes = cond.value == _enabled[i];
             break;
           case AttributeId::Boundary:
             passes = false;
@@ -161,7 +158,7 @@ public:
             break;
           case AttributeId::Tag:
             passes = false;
-            for (auto val : _tags[i])
+            for (auto & val : _tags[i])
               if (cond.strvalue == val)
               {
                 passes = true;

@@ -15,6 +15,7 @@ class SqliteDb;
 /// work.
 class SqlStatement {
   friend class SqliteDb;
+
  public:
   typedef std::unique_ptr<SqlStatement> Ptr;
 
